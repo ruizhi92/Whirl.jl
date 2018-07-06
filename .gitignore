@@ -6,3 +6,7 @@ examples/.ipynb_checkpoints
 cache
 .#*
 *.mem
+.ipynb_checkpoints/
+docs/build
+*.setup
+*.soln
