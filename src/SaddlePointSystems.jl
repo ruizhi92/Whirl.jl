@@ -107,3 +107,25 @@ end
       A_ldiv_B!((TU(),TF()),sys,rhs)
 
 end
+
+# for unsymmetric system
+function A_ldiv_B!(issymmetric::Bool, state::Tuple{TU,TF},
+                    sys::SaddleSystem{FA,FAB,FBA,TU,TF},
+                    rhs::Tuple{TU,TF}) where {TU,TF,FA,FAB,FBA}
+
+  ru, rf = rhs
+  u, f = state
+  sys.B₂A⁻¹r₁ .= sys.B₂A⁻¹(ru)
+  rf .-= sys.B₂A⁻¹r₁
+  gmres!(f,sys.S,rf,tol=1e-3)
+  u .= sys.A⁻¹(ru)
+  sys.A⁻¹B₁ᵀf .= sys.A⁻¹B₁ᵀ(f)
+  u .-= sys.A⁻¹B₁ᵀf
+  state = u, f
+end
+
+\(sys::SaddleSystem{FA,FAB,FBA,TU,TF},rhs::Tuple{TU,TF}) where {TU,TF,FA,FAB,FBA} =
+      sys._issymmetric == true ? A_ldiv_B!((TU(),TF()),sys,rhs) :
+                               A_ldiv_B!(sys._issymmetric,(TU(),TF()),sys,rhs)
+
+end

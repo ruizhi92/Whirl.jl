@@ -62,3 +62,7 @@ end
 function (∘)(p::Nodes{T, NX, NY}, q::Nodes) where {T, NX, NY}
     product!(Nodes(T, (NX, NY)), p, q)
 end
+
+function (∘)(p::Array{T,2}, q::Array{T,2}) where {T}
+    p*q
+end

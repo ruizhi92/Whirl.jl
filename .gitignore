@@ -10,3 +10,4 @@ cache
 docs/build
 *.setup
 *.soln
+*Untitled.ipynb
