@@ -123,15 +123,10 @@ function A_ldiv_B!(state::Tuple{TU,TF},
   state = u, f
 end
 
-\(sys::SaddleSystem{FA,FAB,FBA,TU,TF,N},rhs::Tuple{TU,TF}) where {TU,TF,FA,FAB,FBA,N} =
-      A_ldiv_B!((TU(),TF()),sys,rhs)
-
-end
-
 # for unsymmetric system
 function A_ldiv_B!(issymmetric::Bool, state::Tuple{TU,TF},
-                    sys::SaddleSystem{FA,FAB,FBA,TU,TF},
-                    rhs::Tuple{TU,TF}) where {TU,TF,FA,FAB,FBA}
+                    sys::SaddleSystem{FA,FAB,FBA,TU,TF,N},
+                    rhs::Tuple{TU,TF}) where {TU,TF,FA,FAB,FBA,N}
 
   ru, rf = rhs
   u, f = state
@@ -144,7 +139,7 @@ function A_ldiv_B!(issymmetric::Bool, state::Tuple{TU,TF},
   state = u, f
 end
 
-\(sys::SaddleSystem{FA,FAB,FBA,TU,TF},rhs::Tuple{TU,TF}) where {TU,TF,FA,FAB,FBA} =
+\(sys::SaddleSystem{FA,FAB,FBA,TU,TF,N},rhs::Tuple{TU,TF}) where {TU,TF,FA,FAB,FBA,N} =
       sys._issymmetric == true ? A_ldiv_B!((TU(),TF()),sys,rhs) :
                                A_ldiv_B!(sys._issymmetric,(TU(),TF()),sys,rhs)
 
