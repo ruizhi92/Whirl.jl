@@ -1,42 +1,34 @@
 include(Pkg.dir("Dyn3d")*"/src/Dyn3d.jl")
 using Dyn3d
 
-mutable struct BodyDyn
-    bs::Vector{SingleBody}
-    js::Vector{SingleJoint}
-    sys::Dyn3d.System
-end
-
 """
-    A(t, body_dyn)
+    A(body_dyn)
 
 Returns the collected inertia matrix of all body in their own body coord.
 
 # Arguments
 
-    - 't' : time to evalute r₁
     - 'body_dyn' : a stuct containing all state information of bodys and joints
 
 """
-function A(t::T, body_dyn::BodyDyn) where T <: AbstractFloat
+function A(body_dyn::BodyDyn)
     @get body_dyn (sys, )
 
     return sys.Ib_total
 end
 
 """
-    B₁ᵀ(t, body_dyn)
+    B₁ᵀ(body_dyn)
 
 Computes the constraint matrix for Lagrange multiplier force term. B₁ᵀ reveals
 the active-reactive forcing term on parent-child body.
 
 # Arguments
 
-    - 't' : time to evalute r₁
     - 'body_dyn' : a stuct containing all state information of bodys and joints
 
 """
-function B₁ᵀ(t::T, body_dyn::BodyDyn) where T <: AbstractFloat
+function B₁ᵀ(body_dyn::BodyDyn)
     @get body_dyn (bs, sys)
     # pointer to pre-allocated array
     @get sys.pre_array (A_total,)
@@ -55,14 +47,14 @@ function B₁ᵀ(t::T, body_dyn::BodyDyn) where T <: AbstractFloat
 end
 
 """
-    B₂(t, body_dyn)
+    B₂(body_dyn)
 
 Computes the motion constraint matrix acting on all body's velocity. These
 constraints arise from body velocity relation in each body's local body coord,
 for example if body 2 and 3 are connected then:
     v(3) = vJ(3) + X2_to_3*v(2)
 """
-function B₂(t::T, body_dyn::BodyDyn) where T <: AbstractFloat
+function B₂(body_dyn::BodyDyn)
     @get body_dyn (bs, sys)
     # pointer to pre-allocated array
     @get sys.pre_array (B_total,)
@@ -81,7 +73,7 @@ function B₂(t::T, body_dyn::BodyDyn) where T <: AbstractFloat
 end
 
 """
-    r₁(t, body_dyn)
+    r₁(body_dyn)
 
 Computes the right hand side of body dynamics momentum equation using body
 velocity and joints position. It returns a forcing term, which is a summation of
@@ -94,7 +86,7 @@ change of inertia effect, together with gravity and external force.
 - 'body_dyn' : a stuct containing all state information of bodys and joints
 
 """
-function r₁(t::T, body_dyn::BodyDyn) where T <: AbstractFloat
+function r₁(body_dyn::BodyDyn)
     @get body_dyn (bs, js, sys)
     # pointer to pre-allocated array
     @get sys.pre_array (p_total, τ_total, p_bias, f_g, f_ex, r_temp,
@@ -173,5 +165,5 @@ function r₂(t::T, body_dyn::BodyDyn) where T <: AbstractFloat
     end
 
     v_gti[sys.udof_a] = va_gti
-    return -(sys.T_total')*v_gti
+    return (sys.T_total')*v_gti
 end
