@@ -123,6 +123,10 @@ Base.similar(::ScalarData{N}) where {N} = ScalarData(N)
 
 Base.similar(::VectorData{N}) where {N} = VectorData(N)
 
+# added by Ruizhi so that VectorData can serve as a wrapper
+function VectorData(a::Array{Float64,2})
+    return VectorData(a[:,1],a[:,2])
+end
 
 Base.size(A::VectorData) = size(A.u).+size(A.v)
 @propagate_inbounds Base.getindex(A::VectorData{N},i::Int) where {N} =

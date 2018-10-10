@@ -98,6 +98,7 @@ function TimeMarching.r₁(w::Nodes{Dual,NX,NY},t,sys::NavierStokes{NX,NY}) wher
 end
 
 # RHS of Navier-Stokes (non-linear convective term)
+# U∞ represents free stream velocity, which is subtracted from the b.c.s from rigid body
 function TimeMarching.r₁(w::Nodes{Dual,NX,NY},t,sys::NavierStokes{NX,NY},U∞::RigidBodyMotions.RigidBodyMotion) where {NX,NY}
 
   Ww = sys.Ww
@@ -118,14 +119,14 @@ end
 
 # RHS of a stationary body with no surface velocity
 function TimeMarching.r₂(w::Nodes{Dual,NX,NY},t,sys::NavierStokes{NX,NY,N,true}) where {NX,NY,N}
-    ΔV = VectorData(sys.X̃)
+    ΔV = VectorData(sys.X̃) # create a struct ΔV with same shape of sys.X̃ and initialize it
     ΔV.u .-= sys.U∞[1]
     ΔV.v .-= sys.U∞[2]
     return ΔV
 end
 
 function TimeMarching.r₂(w::Nodes{Dual,NX,NY},t,sys::NavierStokes{NX,NY,N,true},U∞::RigidBodyMotions.RigidBodyMotion) where {NX,NY,N}
-    ΔV = VectorData(sys.X̃)
+    ΔV = VectorData(sys.X̃) # create a struct ΔV with same shape of sys.X̃ and initialize it
     _,ċ,_,_,_,_ = U∞(t)
     ΔV.u .-= real(ċ)
     ΔV.v .-= imag(ċ)
@@ -154,3 +155,4 @@ function TimeMarching.plan_constraints(w::Nodes{Dual,NX,NY},t,sys::NavierStokes{
 end
 
 include("navierstokes/movingbody.jl")
+# include("navierstokes/stronglycoupled2d.jl")
