@@ -154,5 +154,5 @@ function TimeMarching.plan_constraints(w::Nodes{Dual,NX,NY},t,sys::NavierStokes{
   return f -> TimeMarching.B₁ᵀ(f,regop,sys),w -> TimeMarching.B₂(w,regop,sys)
 end
 
-include("navierstokes/movingbody.jl")
-# include("navierstokes/stronglycoupled2d.jl")
+# include("navierstokes/movingbody.jl")
+include("navierstokes/fs_interaction.jl")

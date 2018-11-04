@@ -22,6 +22,7 @@ function TimeMarching.r₂(u::Tuple{Nodes{Dual,NX,NY},Vector{Float64}},t,sys::Na
   end
   ΔV.u .-= sys.U∞[1]
   ΔV.v .-= sys.U∞[2]
+# println("motion ",ΔV.v,"\n")
   return ΔV, Vector{Float64}()
 end
 
@@ -34,6 +35,7 @@ function TimeMarching.plan_constraints(u::Tuple{Nodes{Dual,NX,NY},Vector{Float64
   # should be able to save some time and memory allocation here...
   x, y = T(sys.X̃.u,sys.X̃.v)
   X = VectorData(x,y)
+# println("coord ",x,y,"\n")
   regop = Regularize(X,sys.Δx;issymmetric=true)
   if sys._isstore
     Hmat, Emat = RegularizationMatrix(regop,VectorData{N}(),Edges{Primal,NX,NY}())

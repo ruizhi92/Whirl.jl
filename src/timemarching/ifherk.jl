@@ -72,6 +72,7 @@ function (::Type{IFHERK})(u::TU,f::TF,Δt::Float64,
                           isstaticconstraints::Bool=true,
                           isstaticmatrix::Bool=true,
                           isstored::Bool=false,
+                          isinit::Bool=false,
                           rk::RKParams{NS}=RK31) where {TU,TF,FI,FC,FR1,FR2,FP,NS}
 
 
@@ -102,6 +103,7 @@ function (::Type{IFHERK})(u::TU,f::TF,Δt::Float64,
     # construct an array of operators for the integrating factor. Each
     # one can act on data of type `u` and return data of the same type.
     # e.g. we can call Hlist[1]*u to get the result.
+    #---------------------------------------------------------------------------
     if TU <: Tuple
       (FI <: Tuple && length(plan_intfact) == length(u)) ||
                 error("plan_intfact argument must be a tuple")
@@ -109,6 +111,24 @@ function (::Type{IFHERK})(u::TU,f::TF,Δt::Float64,
     else
       Hlist = [plan_intfact(dc*Δt,u) for dc in unique(dclist)]
     end
+    #---------------------------------------------------------------------------
+    # if TU <: Tuple
+    #   (FI <: Tuple && length(plan_intfact) == length(u)) ||
+    #             error("plan_intfact argument must be a tuple")
+    #   if isinit
+    #       Hlist = [map((plan,ui) -> plan(0.0,ui),plan_intfact,u) for dc in unique(dclist)]
+    #   else
+    #       Hlist = [map((plan,ui) -> plan(dc*Δt,ui),plan_intfact,u) for dc in unique(dclist)]
+    #   end
+    # else
+    #     if isinit
+    #         Hlist = [plan_intfact(0.0,u) for dc in unique(dclist)]
+    #     else
+    #         Hlist = [plan_intfact(dc*Δt,u) for dc in unique(dclist)]
+    #     end
+    # end
+    #---------------------------------------------------------------------------
+
     H = [Hlist[i] for i in indexin(dclist,unique(dclist))]
 
     # preform the saddle-point systems
@@ -334,7 +354,9 @@ function (scheme::IFHERK{NS,FH,FR1,FR2,FC,FS,TU,TF})(t::Float64,u::TU) where
 
 end
 
+#-------------------------------------------------------------------------------
 # Advance the IFHERK solution by one time step
+# This form works when u in NOT a tuple
 function (scheme::IFHERK{NS,FH,FR1,FR2,FC,FS,TU,TF})(t::Float64,u::TU) where
                       {NS,FH,FR1,FR2,FC,FS,TU,TF}
   @get scheme (rk,rkdt,H,plan_constraints,r₁,r₂,qᵢ,w,fbuffer,ubuffer,tol,
@@ -343,6 +365,7 @@ function (scheme::IFHERK{NS,FH,FR1,FR2,FC,FS,TU,TF})(t::Float64,u::TU) where
 
   # H[i] corresponds to H(i,i+1) = H((cᵢ - cᵢ₋₁)Δt)
   # Each of the coefficients includes the time step size
+  f = deepcopy(fbuffer)
 
   i = 1
   tᵢ₊₁ = t

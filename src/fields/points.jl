@@ -1,4 +1,4 @@
-import Base: size
+import Base: size,+,*
 
 #abstract type Points <: AbstractArray{Float64} end
 
@@ -123,10 +123,34 @@ Base.similar(::ScalarData{N}) where {N} = ScalarData(N)
 
 Base.similar(::VectorData{N}) where {N} = VectorData(N)
 
-# added by Ruizhi so that VectorData can serve as a wrapper
+# ------------------------------------------------------------------------------
+# added by Ruizhi
+# VectorData can serve as a wrapper
 function VectorData(a::Array{Float64,2})
     return VectorData(a[:,1],a[:,2])
 end
+
+function (+)(a::VectorData, b::VectorData)
+    c = VectorData(a)
+    c.u .= a.u .+ b.u
+    c.v .= a.v .+ b.v
+    return c
+end
+
+function (*)(ω::T, a::VectorData) where T<: Real
+    c = VectorData(a)
+    c.u .= ω.*a.u
+    c.v .= ω.*a.v
+    return c
+end
+
+function (*)(a::VectorData,ω::T) where T<: Real
+    c = VectorData(a)
+    c.u .= ω.*a.u
+    c.v .= ω.*a.v
+    return c
+end
+# ------------------------------------------------------------------------------
 
 Base.size(A::VectorData) = size(A.u).+size(A.v)
 @propagate_inbounds Base.getindex(A::VectorData{N},i::Int) where {N} =
