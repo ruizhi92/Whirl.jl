@@ -2,7 +2,7 @@ module TimeMarching
 
 import Whirl:@get
 
-export System, Constrained, Unconstrained, RK, IFRK, IFHERK, r₁, r₂, B₂, B₁ᵀ,
+export System, Constrained, Unconstrained, RK, IFRK, IFHERK, IFHERK_sc2d, r₁, r₂, B₂, B₁ᵀ,
           plan_constraints
 
 "Abstract type for a system of ODEs"
@@ -35,5 +35,6 @@ const Euler = RKParams{1}([1.0],ones(1,1))
 include("timemarching/rk.jl")
 include("timemarching/ifrk.jl")
 include("timemarching/ifherk.jl")
+include("timemarching/ifherk_sc2d.jl")
 
 end
