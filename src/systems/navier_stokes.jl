@@ -11,7 +11,7 @@ mutable struct NavierStokes{NX, NY, N, isstatic}  #<: System{Unconstrained}
     "Time step (used to determine integrating factor diffusion rate)"
     Δt::Float64
     "Runge-Kutta method"
-    rk::TimeMarching.RKParams
+    rk::RKParams
 
     # Operators
     "Laplacian operator"
@@ -44,7 +44,7 @@ function NavierStokes(dims::Tuple{Int, Int}, Re, Δx, Δt;
                        U∞ = (0.0, 0.0), X̃ = VectorData{0}(),
                        isstore = false,
                        isstatic = true,
-                       rk::TimeMarching.RKParams=TimeMarching.RK31)
+                       rk::RKParams=RK31)
     NX, NY = dims
 
     α = Δt/(Re*Δx^2)
@@ -155,4 +155,4 @@ function TimeMarching.plan_constraints(w::Nodes{Dual,NX,NY},t,sys::NavierStokes{
 end
 
 # include("navierstokes/movingbody.jl")
-include("navierstokes/fs_interaction.jl")
+# include("navierstokes/fs_interaction.jl")

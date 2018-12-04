@@ -6,7 +6,6 @@ module Whirl
 
 using Reexport
 
-
 #== Imports/Exports ==#
 
 include("Utils.jl")

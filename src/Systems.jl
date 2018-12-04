@@ -1,13 +1,11 @@
 module Systems
 
+import Dyn3d:RKParams,TimeMarching.RK31
+
 using ..Fields
-using ..TimeMarching
 using ..RigidBodyMotions
 using ..Bodies
-#import Whirl: r₁
-#import Whirl: plan_intfact
-
-
+using ..TimeMarching
 
 include("systems/navier_stokes.jl")
 
