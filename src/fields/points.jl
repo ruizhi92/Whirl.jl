@@ -137,6 +137,12 @@ function (+)(a::VectorData, b::VectorData)
     return c
 end
 
+function (+)(a::ScalarData, b::ScalarData)
+    c = ScalarData(a)
+    c.data .= a.data .+ b.data
+    return c
+end
+
 function (*)(ω::T, a::VectorData) where T<: Real
     c = VectorData(a)
     c.u .= ω.*a.u

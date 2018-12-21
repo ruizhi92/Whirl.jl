@@ -1,6 +1,6 @@
 module TimeMarching
 
-import Whirl:@get
+import Whirl:@get, Nodes
 import Dyn3d:RKParams, TimeMarching.RK31
 
 export System, Constrained, Unconstrained, RK, IFRK, IFHERK, r₁, r₂, B₂, B₁ᵀ,

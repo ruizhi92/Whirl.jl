@@ -1,7 +1,7 @@
 # IFHERK
 
 """
-    IFHERK(rk::u,f,Δt,plan_intfact,B₁ᵀ,B₂,r₁,r₂;[tol=1e-3],[issymmetric=false])
+    IFHERK(rk::u,f,Δt,plan_intfact,B₁ᵀ,B₂,r₁,r₂;[tol=1e-3])
 
 Construct an integrator to advance a system of the form
 
@@ -25,7 +25,7 @@ if applicable.
 - `r₁` : operator acting on type `u` and `t` and returning `u`
 - `r₂` : operator acting on type `u` and `t` and returning type `f`
 """
-struct IFHERK{FH,FR1,FR2,FC,FS,TU,TF}
+struct IFHERK{FH1,FH2,FR1,FR2,FC,FS,TU,TF}
 
   # time step size
   Δt :: Float64
@@ -34,8 +34,10 @@ struct IFHERK{FH,FR1,FR2,FC,FS,TU,TF}
   rkdt :: RKParams
 
   # Integrating factors
-  H :: Vector{FH}
+  H :: Vector{FH1}
+  H⁻¹ :: Vector{FH2}
 
+  # right hand side in the differential equations
   r₁ :: FR1  # function of u and t, returns TU
   r₂ :: FR2  # function of u and t, returns TF
 
@@ -48,17 +50,12 @@ struct IFHERK{FH,FR1,FR2,FC,FS,TU,TF}
   # scratch space
   qᵢ :: TU
   ubuffer :: TU
-  w :: Vector{TU}
   fbuffer :: TF
+  v̇ :: Vector{TU}
+  H⁻¹v̇ :: Vector{TU}
 
   # iterative solution tolerance
   tol :: Float64
-
-  # flags
-  _issymmetric :: Bool # is the system matrix symmetric?
-  _isstaticconstraints :: Bool  # do the system constraint operators stay unchanged?
-  _isstaticmatrix :: Bool # is the upper left-hand matrix static?
-  _isstored :: Bool # is the Schur complement matrix (inverse) stored?
 
 end
 
@@ -68,10 +65,6 @@ function (::Type{IFHERK})(u::TU,f::TF,Δt::Float64,
                           rhs::Tuple{FR1,FR2};
                           tol::Float64=1e-3,
                           conditioner::FP = x -> x,
-                          issymmetric::Bool=false,
-                          isstaticconstraints::Bool=true,
-                          isstaticmatrix::Bool=true,
-                          isstored::Bool=false,
                           rk::RKParams=RK31) where {TU,TF,FI,FC,FR1,FR2,FP}
 
    # templates for the operators
@@ -92,32 +85,38 @@ function (::Type{IFHERK})(u::TU,f::TF,Δt::Float64,
     # scratch space
     qᵢ = deepcopy(u)
     ubuffer = deepcopy(u)
-    w = [deepcopy(u) for i = 1:rk.st+1] # one extra for last step in tuple form
     fbuffer = deepcopy(f)
-
-    dclist = diff(rk.c)
+    v̇ = [Nodes(u) for i = 1:rk.st]
+    H⁻¹v̇ = [Nodes(u) for i = 1:rk.st]
 
     # construct an array of operators for the integrating factor. Each
     # one can act on data of type `u` and return data of the same type.
     # e.g. we can call Hlist[1]*u to get the result.
     #---------------------------------------------------------------------------
+    dclist = rk.c[2:end]
+
     if TU <: Tuple
       (FI <: Tuple && length(plan_intfact) == length(u)) ||
                 error("plan_intfact argument must be a tuple")
       Hlist = [map((plan,ui) -> plan(dc*Δt,ui),plan_intfact,u) for dc in unique(dclist)]
+      H⁻¹list = [map((plan,ui) -> plan(-dc*Δt,ui),plan_intfact,u) for dc in unique(dclist)]
+
     else
       Hlist = [plan_intfact(dc*Δt,u) for dc in unique(dclist)]
+      H⁻¹list = [plan_intfact(-dc*Δt,u) for dc in unique(dclist)]
     end
 
     H = [Hlist[i] for i in indexin(dclist,unique(dclist))]
+    H⁻¹ = [H⁻¹list[i] for i in indexin(dclist,unique(dclist))]
 
     # preform the saddle-point systems
     # these are overwritten if B₁ᵀ and B₂ vary with time
-    Slist = [construct_saddlesys(plan_constraints,Hi,u,f,0.0,
-                    tol,issymmetric,isstored,precompile=false)[1] for Hi in Hlist]
+    Slist = [construct_saddlesys(plan_constraints,H[i],H⁻¹[i],u,f,0.0,
+                    tol)[1] for i=1:rk.st]
     S = [Slist[i] for i in indexin(dclist,unique(dclist))]
 
-    htype,_ = typeof(H).parameters
+    h1type,_ = typeof(H).parameters
+    h2type,_ = typeof(H⁻¹).parameters
     stype,_ = typeof(S).parameters
 
 
@@ -127,11 +126,11 @@ function (::Type{IFHERK})(u::TU,f::TF,Δt::Float64,
     rkdt.c .*= Δt
 
 
-    ifherksys = IFHERK{htype,typeof(r₁),typeof(r₂),FC,stype,TU,TF}(Δt,rk,rkdt,
-                                H,r₁,r₂,
+    ifherksys = IFHERK{h1type,h2type,typeof(r₁),typeof(r₂),FC,stype,TU,TF}(Δt,rk,rkdt,
+                                H,H⁻¹,r₁,r₂,
                                 plan_constraints,S,
-                                qᵢ,ubuffer,w,fbuffer,
-                                tol,issymmetric,isstaticconstraints,isstaticmatrix,isstored)
+                                qᵢ,ubuffer,fbuffer,v̇,H⁻¹v̇,
+                                tol)
 
     # pre-compile
     #ifherksys(0.0,u)
@@ -139,7 +138,7 @@ function (::Type{IFHERK})(u::TU,f::TF,Δt::Float64,
     return ifherksys
 end
 
-function Base.show(io::IO, scheme::IFHERK{FH,FR1,FR2,FC,FS,TU,TF}) where {FH,FR1,FR2,FC,FS,TU,TF}
+function Base.show(io::IO, scheme::IFHERK{FH1,FH2,FR1,FR2,FC,FS,TU,TF}) where {FH1,FH2,FR1,FR2,FC,FS,TU,TF}
     println(io, "Order-$(scheme.rk.st)+ IF-HERK integrator with")
     println(io, "   State of type $TU")
     println(io, "   Force of type $TF")
@@ -149,17 +148,16 @@ end
 # this function will call the plan_constraints function and return the
 # saddle point system for a single instance of H, (and B₁ᵀ and B₂)
 # plan_constraints should only compute B₁ᵀ and B₂ (and P if needed)
-function construct_saddlesys(plan_constraints::FC,H::FH,
-                           u::TU,f::TF,t::Float64,tol::Float64,issymmetric::Bool,isstored::Bool;
-                           precompile::Bool=false) where {FC,FH,TU,TF}
+function construct_saddlesys(plan_constraints::FC,H::FH1,H⁻¹::FH2,
+                           u::TU,f::TF,t::Float64,tol::Float64) where {FC,FH1,FH2,TU,TF}
 
     sys = plan_constraints(u,t) # sys contains B₁ᵀ and B₂ before fixing them up
 
-    # B₁ᵀ acts on type TF
-    # B₂ acts on TU
+    # B₁ᵀ acts on type TF, B₂ acts on TU
     optypes = ((TF,),(TU,))
     opnames = ("B₁ᵀ","B₂")
     ops = []
+
     # check for methods for B₁ᵀ and B₂
     for (i,typ) in enumerate(optypes)
       if TU <: Tuple
@@ -189,21 +187,78 @@ function construct_saddlesys(plan_constraints::FC,H::FH,
     end
     B₁ᵀ, B₂ = ops
 
+    # Actually call SaddleSystem
     if TU <: Tuple
-      S = map((ui,fi,Hi,B₁ᵀi,B₂i) ->
-                  SaddleSystem((ui,fi),(Hi,B₁ᵀi,B₂i),tol=tol,issymmetric=issymmetric,isposdef=true,store=isstored,precompile=precompile),
-                    u,f,H,B₁ᵀ,B₂)
+        S = map((ui,fi,Hi,H⁻¹i,B₁ᵀi,B₂i) ->
+                  SaddleSystem((ui,fi),(x->H*(B₁ᵀ(x)),x->B₂(H⁻¹*x)),tol=tol,issymmetric=false,isposdef=true,store=true,precompile=false),
+                    u,f,H,H⁻¹,B₁ᵀ,B₂)
     else
-      S = SaddleSystem((u,f),(H,B₁ᵀ,B₂),tol=tol,
-                issymmetric=issymmetric,isposdef=true,store=isstored,precompile=precompile)
+        S = SaddleSystem((u,f),(x->H*(B₁ᵀ(x)),x->B₂(H⁻¹*x)),tol=tol,
+                issymmetric=false,isposdef=true,store=true,precompile=false)
     end
 
     return S, ops
 
+end
 
+
+#-------------------------------------------------------------------------------
+# Advance the IFHERK solution by one time step
+# This form works when u is NOT a tuple
+function (scheme::IFHERK{FH1,FH2,FR1,FR2,FC,FS,TU,TF})(t::Float64,u::TU) where
+                      {FH1,FH2,FR1,FR2,FC,FS,TU,TF}
+  @get scheme (rk,rkdt,H,H⁻¹,plan_constraints,r₁,r₂,qᵢ,ubuffer,fbuffer,v̇,H⁻¹v̇,tol)
+
+    # H[i] corresponds to H(cᵢ₊₁Δt)
+    # rkdt coefficients includes the time step size
+    f = deepcopy(fbuffer)
+
+    # first stage, i = 1
+    # initial value of v̇ and H⁻¹v̇ are set to 0 when creating ifherk object
+    i = 1
+    tᵢ = t
+    qᵢ .= u     # qᵢ is used to store initial value of u
+
+    for i = 2:rk.st+1
+        # set time
+        tᵢ = t + rkdt.c[i]
+
+        # construct saddlesys
+        S, (_, B₂) = construct_saddlesys(plan_constraints,H[i-1],H⁻¹[i-1],u,f,tᵢ,tol)
+
+        # construct lower right hand of saddle system
+        fbuffer = B₂(qᵢ)
+        fbuffer .-= r₂(u,tᵢ)
+        ubuffer.data .= 0.0
+        for j = 1:i-2
+            ubuffer .+= rkdt.a[i,j] .* v̇[j]
+        end
+        fbuffer += B₂(H⁻¹[i-1]*ubuffer)
+        fbuffer ./= -rkdt.a[i,i-1]
+
+        # construct upper right hand side of saddle system
+        ubuffer = H[i-1]*r₁(u,tᵢ)
+
+        # solve the linear system
+        v̇[i-1], f = S\(ubuffer,fbuffer)
+
+        # store the un-diffused acceleration
+        H⁻¹v̇[i-1] = H⁻¹[i-1]*v̇[i-1]
+
+        # accumulate velocity up to the current stage
+        u .= qᵢ
+        for j = 1:i-1
+            u .+=  rkdt.a[i,j] .* H⁻¹v̇[j]
+        end
+    end
+
+    return tᵢ, u, f
 
 end
 
+
+
+#-------------------------------------------------------------------------------
 # # Advance the IFHERK solution by one time step
 # # This form works when u is a tuple of state vectors
 # function (scheme::IFHERK{FH,FR1,FR2,FC,FS,TU,TF})(t::Float64,u::TU) where
@@ -326,92 +381,3 @@ end
 #   return t, u, f
 #
 # end
-
-#-------------------------------------------------------------------------------
-# Advance the IFHERK solution by one time step
-# This form works when u in NOT a tuple
-function (scheme::IFHERK{FH,FR1,FR2,FC,FS,TU,TF})(t::Float64,u::TU) where
-                      {FH,FR1,FR2,FC,FS,TU,TF}
-  @get scheme (rk,rkdt,H,plan_constraints,r₁,r₂,qᵢ,w,fbuffer,ubuffer,tol,
-                    _isstaticconstraints,_issymmetric,_isstored)
-
-  # H[i] corresponds to H(i,i+1) = H((cᵢ - cᵢ₋₁)Δt)
-  # Each of the coefficients includes the time step size
-  f = deepcopy(fbuffer)
-
-  i = 1
-  tᵢ₊₁ = t
-  ubuffer .= u
-  qᵢ .= u
-
-  if !_isstaticconstraints
-    S,_ = construct_saddlesys(plan_constraints,H[i],u,f,tᵢ₊₁,tol,_issymmetric,_isstored)
-  else
-    S = scheme.S[i]
-  end
-
-
-
-    # first stage, i = 1
-    w[i] .= rkdt.a[i+1,i].*r₁(u,tᵢ₊₁) # gᵢ
-    ubuffer .+= w[i] # r₁ = qᵢ + gᵢ
-    fbuffer .= r₂(u,tᵢ₊₁) # r₂
-    u, f = S\(ubuffer,fbuffer)  # solve saddle point system
-    ubuffer .= S.A⁻¹B₁ᵀf
-    tᵢ₊₁ = t + rkdt.c[i+1]
-
-    # diffuse the scratch vectors
-    qᵢ .= H[i]*qᵢ # qᵢ₊₁ = H(i,i+1)qᵢ
-    w[i] .= H[i]*w[i] # H(i,i+1)gᵢ
-
-
-
-    # stages 2 through st-1
-    for i = 2:rk.st-1
-      if !_isstaticconstraints
-        S,_ = construct_saddlesys(plan_constraints,H[i],u,f,tᵢ₊₁,tol,_issymmetric,_isstored)
-      else
-        S = scheme.S[i]
-      end
-      w[i-1] .= (w[i-1]-ubuffer)./(rkdt.a[i,i-1]) # w(i,i-1)
-      w[i] .= rkdt.a[i+1,i].*r₁(u,tᵢ₊₁) # gᵢ
-      ubuffer .= qᵢ .+ w[i] # r₁
-      for j = 1:i-1
-        ubuffer .+= rkdt.a[i+1,j]*w[j] # r₁
-      end
-      fbuffer .= r₂(u,tᵢ₊₁) # r₂
-      u, f = S\(ubuffer,fbuffer)  # solve saddle point system
-      ubuffer .= S.A⁻¹B₁ᵀf
-      tᵢ₊₁ = t + rkdt.c[i+1]
-
-      # diffuse the scratch vectors
-      qᵢ .= H[i]*qᵢ # qᵢ₊₁ = H(i,i+1)qᵢ
-      for j = 1:i
-        w[j] .= H[i]*w[j] # for j = i, this sets H(i,i+1)gᵢ
-      end
-    end
-
-
-
-    i = rk.st
-    if !_isstaticconstraints
-      S,_ = construct_saddlesys(plan_constraints,H[i],u,f,tᵢ₊₁,tol,_issymmetric,_isstored)
-    else
-      S = scheme.S[i]
-    end
-    w[i-1] .= (w[i-1]-ubuffer)./(rkdt.a[i,i-1]) # w(i,i-1)
-
-
-  # final stage (assembly)
-  ubuffer .= qᵢ .+ rkdt.a[i+1,i].*r₁(u,tᵢ₊₁) # r₁
-  for j = 1:i-1
-    ubuffer .+= rkdt.a[i+1,j]*w[j] # r₁
-  end
-  fbuffer .= r₂(u,tᵢ₊₁) # r₂
-  u, f = S\(ubuffer,fbuffer)  # solve saddle point system
-  f ./= rkdt.a[i+1,i]
-  t = t + rkdt.c[i+1]
-
-  return t, u, f
-
-end

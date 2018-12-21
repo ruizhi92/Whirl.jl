@@ -8,7 +8,7 @@ import Base: *, \, A_mul_B!, A_ldiv_B!
 
 export SaddleSystem
 
-struct SaddleSystem{FA,FAB,FBA,FP,TU,TF,N,Storage}
+struct SaddleSystem{FA,FAB,FBA,FP,TU,TF,N,Storage,AI}
     A⁻¹B₁ᵀf :: TU
     B₂A⁻¹r₁ :: TF
     tmpvec :: Vector{Float64}
@@ -56,6 +56,7 @@ resulting solution is somewhat noiser, too.
 - `B₂` : operator evaluating the influence of state vector on constraints,
             acting on `u` and returning type `f`
 """
+# This works when A⁻¹ is not identity
 function (::Type{SaddleSystem})(state::Tuple{TU,TF},sys::Tuple{FA,FB1,FB2};
                                 tol::Float64=1e-3,
                                 conditioner::FP=x->x,
@@ -116,9 +117,85 @@ function (::Type{SaddleSystem})(state::Tuple{TU,TF},sys::Tuple{FA,FB1,FB2};
 
     B₂A⁻¹(w::TU) = (B₂∘A⁻¹)(w)
 
-    saddlesys = SaddleSystem{typeof(A⁻¹),typeof(A⁻¹B₁ᵀ),typeof(B₂A⁻¹),typeof(conditioner),TU,TF,N,store}(
+    saddlesys = SaddleSystem{typeof(A⁻¹),typeof(A⁻¹B₁ᵀ),typeof(B₂A⁻¹),typeof(conditioner),TU,TF,N,store,false}(
                                 ubuffer,fbuffer,tmpvec,tmpvecout,
                                 A⁻¹,A⁻¹B₁ᵀ,B₂A⁻¹,conditioner,S,S⁻¹,
+                                tol,issymmetric,isposdef)
+    # run once in order to precompile it
+    if precompile
+      saddlesys\(u,f)
+    end
+
+    return saddlesys
+
+end
+
+#-------------------------------------------------------------------------------
+# This works when A⁻¹ is identity matrix
+function (::Type{SaddleSystem})(state::Tuple{TU,TF},sys::Tuple{FB1,FB2};
+                                tol::Float64=1e-3,
+                                conditioner::FP=x->x,
+                                issymmetric::Bool=false,
+                                isposdef::Bool=false,
+                                store::Bool=false,
+                                precompile::Bool=true) where {TU,TF,FB1,FB2,FP}
+    u,f = state
+
+    optypes = ((TF,),(TU,))
+    opnames = ("B₁ᵀ","B₂")
+    ops = []
+
+    # check for methods
+    for (i,typ) in enumerate(optypes)
+      if method_exists(sys[i],typ)
+        push!(ops,sys[i])
+      elseif method_exists(*,(typeof(sys[i]),typ...))
+        # generate a method that acts on TU
+        push!(ops,x->sys[i]*x)
+      else
+        error("No valid operator for $(opnames[i]) supplied")
+      end
+    end
+
+    B₁ᵀ, B₂ = ops
+
+    ubuffer = deepcopy(u)
+    fbuffer = deepcopy(f)
+    N = length(f)
+    tmpvec = zeros(N)
+    tmpvecout = zeros(N)
+
+    # Schur complement
+    function Schur!(fout::AbstractVector{Float64},fin::AbstractVector{Float64})
+       fbuffer .= fin
+       fbuffer .= (B₂∘B₁ᵀ)(fbuffer)
+       fout .= -fbuffer
+       return fout
+    end
+    S = LinearMap(Schur!,N;ismutating=true,issymmetric=issymmetric,isposdef=isposdef)
+
+
+    if store && N > 0
+      Smat = zeros(N,N)
+      fill!(f,0.0)
+      for i = 1:N
+        f[i] = 1.0
+        fbuffer .= S*f
+        Smat[1:N,i] .= fbuffer
+        f[i] = 0.0
+      end
+      S⁻¹ = Nullable(factorize(Smat))
+    else
+      S⁻¹ = Nullable()
+    end
+
+    A⁻¹B₁ᵀ(f::TF) = B₁ᵀ(f)
+
+    B₂A⁻¹(w::TU) = B₂(w)
+
+    saddlesys = SaddleSystem{Int,typeof(A⁻¹B₁ᵀ),typeof(B₂A⁻¹),typeof(conditioner),TU,TF,N,store,true}(
+                                ubuffer,fbuffer,tmpvec,tmpvecout,
+                                2019,A⁻¹B₁ᵀ,B₂A⁻¹,conditioner,S,S⁻¹,
                                 tol,issymmetric,isposdef)
     # run once in order to precompile it
     if precompile
@@ -132,7 +209,7 @@ end
 (::Type{SaddleSystem})(state::Tuple{TU,TF},sys::Array{Any,2};kwarg...) where {TU,TF} =
             SaddleSystem(state,(sys[1,1],sys[1,2],sys[2,1]);kwarg...)
 
-function Base.show(io::IO, S::SaddleSystem{FA,FAB,FBA,FP,TU,TF,N,Storage}) where {FA,FAB,FBA,FP,TU,TF,N,Storage}
+function Base.show(io::IO, S::SaddleSystem{FA,FAB,FBA,FP,TU,TF,N,Storage,AI}) where {FA,FAB,FBA,FP,TU,TF,N,Storage,AI}
     println(io, "Saddle system with $N constraints and")
     println(io, "   State of type $TU")
     println(io, "   Force of type $TF")
@@ -171,9 +248,9 @@ function A_ldiv_B!(state::Tuple{TU,TF},
   state = u, f
 end
 
-# stored matrix
+# stored matrix with A⁻¹ NOT identity, AI=false
 function A_ldiv_B!(state::Tuple{TU,TF},
-                    sys::SaddleSystem{FA,FAB,FBA,FP,TU,TF,N,true},
+                    sys::SaddleSystem{FA,FAB,FBA,FP,TU,TF,N,true,false},
                     rhs::Tuple{TU,TF}) where {TU,TF,FA,FAB,FBA,FP,N}
 
   ru, rf = rhs
@@ -192,8 +269,28 @@ function A_ldiv_B!(state::Tuple{TU,TF},
   state = u, f
 end
 
+# stored matrix with A⁻¹ identity, AI=true
+function A_ldiv_B!(state::Tuple{TU,TF},
+                    sys::SaddleSystem{FA,FAB,FBA,FP,TU,TF,N,true,true},
+                    rhs::Tuple{TU,TF}) where {TU,TF,FA,FAB,FBA,FP,N}
+                    
+  ru, rf = rhs
+  u, f = state
+  sys.B₂A⁻¹r₁ .= sys.B₂A⁻¹(ru)
+  rf .-= sys.B₂A⁻¹r₁
+  if N > 0
+    sys.tmpvec .= rf
+    A_ldiv_B!(get(sys.S⁻¹),sys.tmpvec)
+    f .= sys.tmpvec
+    f .= sys.P(f)
+  end
+  u .= ru
+  sys.A⁻¹B₁ᵀf .= sys.A⁻¹B₁ᵀ(f)
+  u .-= sys.A⁻¹B₁ᵀf
+  state = u, f
+end
 
-\(sys::SaddleSystem{FA,FAB,FBA,FP,TU,TF,N,Storage},rhs::Tuple{TU,TF}) where {TU,TF,FA,FAB,FBA,FP,N,Storage} =
+\(sys::SaddleSystem{FA,FAB,FBA,FP,TU,TF,N,Storage,AI},rhs::Tuple{TU,TF}) where {TU,TF,FA,FAB,FBA,FP,N,Storage,AI} =
       A_ldiv_B!(similar.(rhs),sys,rhs)
 
 
