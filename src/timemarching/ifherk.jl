@@ -52,7 +52,6 @@ struct IFHERK{FH1,FH2,FR1,FR2,FC,FS,TU,TF}
   ubuffer :: TU
   fbuffer :: TF
   v̇ :: Vector{TU}
-  H⁻¹v̇ :: Vector{TU}
 
   # iterative solution tolerance
   tol :: Float64
@@ -87,7 +86,6 @@ function (::Type{IFHERK})(u::TU,f::TF,Δt::Float64,
     ubuffer = deepcopy(u)
     fbuffer = deepcopy(f)
     v̇ = [Nodes(u) for i = 1:rk.st]
-    H⁻¹v̇ = [Nodes(u) for i = 1:rk.st]
 
     # construct an array of operators for the integrating factor. Each
     # one can act on data of type `u` and return data of the same type.
@@ -129,7 +127,7 @@ function (::Type{IFHERK})(u::TU,f::TF,Δt::Float64,
     ifherksys = IFHERK{h1type,h2type,typeof(r₁),typeof(r₂),FC,stype,TU,TF}(Δt,rk,rkdt,
                                 H,H⁻¹,r₁,r₂,
                                 plan_constraints,S,
-                                qᵢ,ubuffer,fbuffer,v̇,H⁻¹v̇,
+                                qᵢ,ubuffer,fbuffer,v̇,
                                 tol)
 
     # pre-compile
@@ -207,14 +205,14 @@ end
 # This form works when u is NOT a tuple
 function (scheme::IFHERK{FH1,FH2,FR1,FR2,FC,FS,TU,TF})(t::Float64,u::TU) where
                       {FH1,FH2,FR1,FR2,FC,FS,TU,TF}
-  @get scheme (rk,rkdt,H,H⁻¹,plan_constraints,r₁,r₂,qᵢ,ubuffer,fbuffer,v̇,H⁻¹v̇,tol)
+  @get scheme (rk,rkdt,H,H⁻¹,plan_constraints,r₁,r₂,qᵢ,ubuffer,fbuffer,v̇,tol)
 
     # H[i] corresponds to H(cᵢ₊₁Δt)
     # rkdt coefficients includes the time step size
     f = deepcopy(fbuffer)
 
     # first stage, i = 1
-    # initial value of v̇ and H⁻¹v̇ are set to 0 when creating ifherk object
+    # initial value of v̇ is set to 0 when creating ifherk object
     i = 1
     tᵢ = t
     qᵢ .= u     # qᵢ is used to store initial value of u
@@ -242,18 +240,14 @@ function (scheme::IFHERK{FH1,FH2,FR1,FR2,FC,FS,TU,TF})(t::Float64,u::TU) where
         # solve the linear system
         v̇[i-1], f = S\(ubuffer,fbuffer)
 
-        # store the un-diffused acceleration
-        H⁻¹v̇[i-1] = H⁻¹[i-1]*v̇[i-1]
-
         # accumulate velocity up to the current stage
-        u .= qᵢ
+        u .= H[i-1]*qᵢ
         for j = 1:i-1
-            u .+=  rkdt.a[i,j] .* H⁻¹v̇[j]
-        end
+            u .+=  rkdt.a[i,j] .* v̇[j]
+        end        
     end
 
     return tᵢ, u, f
-
 end
 
 
