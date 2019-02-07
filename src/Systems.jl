@@ -7,7 +7,7 @@ using ..RigidBodyMotions
 using ..Bodies
 using ..TimeMarching
 
-# include("systems/navier_stokes.jl")
-include("systems/fsi.jl")
+include("systems/navier_stokes.jl")
+# include("systems/fsi.jl")
 
 end

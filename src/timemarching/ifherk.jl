@@ -85,20 +85,19 @@ function (::Type{IFHERK})(u::TU,f::TF,Δt::Float64,
     qᵢ = deepcopy(u)
     ubuffer = deepcopy(u)
     fbuffer = deepcopy(f)
-    v̇ = [Nodes(u) for i = 1:rk.st]
+    v̇ = [deepcopy(u) for i = 1:rk.st]
 
     # construct an array of operators for the integrating factor. Each
     # one can act on data of type `u` and return data of the same type.
     # e.g. we can call Hlist[1]*u to get the result.
     #---------------------------------------------------------------------------
-    dclist = rk.c[2:end]
-
+    dclist = 1.0 - rk.c
+println(dclist)
     if TU <: Tuple
       (FI <: Tuple && length(plan_intfact) == length(u)) ||
                 error("plan_intfact argument must be a tuple")
       Hlist = [map((plan,ui) -> plan(dc*Δt,ui),plan_intfact,u) for dc in unique(dclist)]
       H⁻¹list = [map((plan,ui) -> plan(-dc*Δt,ui),plan_intfact,u) for dc in unique(dclist)]
-
     else
       Hlist = [plan_intfact(dc*Δt,u) for dc in unique(dclist)]
       H⁻¹list = [plan_intfact(-dc*Δt,u) for dc in unique(dclist)]
@@ -110,7 +109,7 @@ function (::Type{IFHERK})(u::TU,f::TF,Δt::Float64,
     # preform the saddle-point systems
     # these are overwritten if B₁ᵀ and B₂ vary with time
     Slist = [construct_saddlesys(plan_constraints,H[i],H⁻¹[i],u,f,0.0,
-                    tol)[1] for i=1:rk.st]
+                    tol)[1] for i=1:rk.st+1]
     S = [Slist[i] for i in indexin(dclist,unique(dclist))]
 
     h1type,_ = typeof(H).parameters
@@ -191,6 +190,8 @@ function construct_saddlesys(plan_constraints::FC,H::FH1,H⁻¹::FH2,
                   SaddleSystem((ui,fi),(x->H*(B₁ᵀ(x)),x->B₂(H⁻¹*x)),tol=tol,issymmetric=false,isposdef=true,store=true,precompile=false),
                     u,f,H,H⁻¹,B₁ᵀ,B₂)
     else
+        # S = SaddleSystem((u,f),(x->B₁ᵀ(x),x->B₂(H⁻¹*x)),tol=tol,
+        #         issymmetric=false,isposdef=true,store=true,precompile=false)
         S = SaddleSystem((u,f),(x->H*(B₁ᵀ(x)),x->B₂(H⁻¹*x)),tol=tol,
                 issymmetric=false,isposdef=true,store=true,precompile=false)
     end
@@ -215,37 +216,51 @@ function (scheme::IFHERK{FH1,FH2,FR1,FR2,FC,FS,TU,TF})(t::Float64,u::TU) where
     # initial value of v̇ is set to 0 when creating ifherk object
     i = 1
     tᵢ = t
-    qᵢ .= u     # qᵢ is used to store initial value of u
+    qᵢ .= H[1]*u     # qᵢ is used to store initial value of u
 
     for i = 2:rk.st+1
         # set time
         tᵢ = t + rkdt.c[i]
 
         # construct saddlesys
-        S, (_, B₂) = construct_saddlesys(plan_constraints,H[i-1],H⁻¹[i-1],u,f,tᵢ,tol)
+        S, (_, B₂) = construct_saddlesys(plan_constraints,H[i-1],H⁻¹[i],u,f,tᵢ,tol)
+        # S, (B₁ᵀ, B₂) = construct_saddlesys(plan_constraints,H[i-1],H⁻¹[i-1],u,f,tᵢ,tol)
 
         # construct lower right hand of saddle system
-        fbuffer = B₂(qᵢ)
-        fbuffer .-= r₂(u,tᵢ)
-        ubuffer.data .= 0.0
+        fbuffer .= -r₂(u,tᵢ)
+        ubuffer.data .= qᵢ
         for j = 1:i-2
             ubuffer .+= rkdt.a[i,j] .* v̇[j]
         end
-        fbuffer += B₂(H⁻¹[i-1]*ubuffer)
-        fbuffer ./= -rkdt.a[i,i-1]
+        ubuffer .= H⁻¹[i]*ubuffer
+        fbuffer .+= B₂(ubuffer)
+        fbuffer .*= -1.0/rkdt.a[i,i-1]
 
         # construct upper right hand side of saddle system
-        ubuffer = H[i-1]*r₁(u,tᵢ)
+        ubuffer .= r₁(u,tᵢ)
+        ubuffer .= H[i-1]*ubuffer
 
         # solve the linear system
         v̇[i-1], f = S\(ubuffer,fbuffer)
 
         # accumulate velocity up to the current stage
-        u .= H[i-1]*qᵢ
+        u .= qᵢ
         for j = 1:i-1
             u .+=  rkdt.a[i,j] .* v̇[j]
-        end        
+        end
+        u .= H⁻¹[i]*u
+
+        # value = (u - H[i-1]*qᵢ)./rkdt.c[i] - H[i-1]*r₁(qᵢ,tᵢ)
+        # value += H[i-1]*(B₁ᵀ(f))
+
+        println("stage ",i-1)
+        println("force x ",f[45:55],"\n")
+        println("acceleration ",(v̇[i-1])[50,60:67],"\n")
+        println("vorticity ",u[50,60:67],"\n")
+        # println("acceleration ",(v̇[i-1])[65,30:40],"\n")
+        # println("vorticity ",u[65,30:40],"\n")
     end
+    println("------------------------------")
 
     return tᵢ, u, f
 end

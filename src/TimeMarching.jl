@@ -1,10 +1,11 @@
 module TimeMarching
 
 import Whirl:@get, Nodes
-import Dyn3d:RKParams, TimeMarching.RK31, TimeMarching.Euler
+import Dyn3d:RKParams, TimeMarching.RK31, TimeMarching.Euler, TimeMarching.RK2
+import Dyn3d:TimeMarching.RK32, TimeMarching.RK4, TimeMarching.RK22
 
 export System, Constrained, Unconstrained, RK, IFRK, IFHERK, r₁, r₂, B₂, B₁ᵀ,
-          plan_constraints, RKParams, RK31, Euler
+          plan_constraints, RKParams, RK31, Euler, RK2, RK32, RK4, RK22
 
 "Abstract type for a system of ODEs"
 abstract type System{C} end
