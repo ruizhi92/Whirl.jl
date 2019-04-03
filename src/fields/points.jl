@@ -130,6 +130,11 @@ function VectorData(a::Array{Float64,2})
     return VectorData(a[:,1],a[:,2])
 end
 
+function VectorData(a::Vector{Float64})
+    N = length(a)÷2
+    return VectorData(a[1:N],a[N+1:end])
+end
+
 function (+)(a::VectorData, b::VectorData)
     c = VectorData(a)
     c.u .= a.u .+ b.u
